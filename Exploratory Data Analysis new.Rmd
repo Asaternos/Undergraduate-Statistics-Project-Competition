@@ -1,0 +1,748 @@
+---
+title: "Preliminary Exploratory Data Analysis"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+### Guiding Question - How accurate were the main polling groups in the months before the 2020 presidential election?
+It seems that the importance of being able to predict the presidency does not need more explanation, but another valuable facet of this project is learning about the accuracy of polling on any subject. 
+One of the most difficult problems I encountered is how to convert everything to integers so that I can perform calculations on them. The most interesting part of this problem is that one of the columns that I wanted to convert had negatives, but when it was turned into an integer it made them all positive. Rather than trying to fix the code that changed the type I decided that it would be easier to simply make them negative after the fact. To do this I wrote a chunk of code that checked a different column and used the information there to make only the appropriate rows negative.
+One significant finding is that the polls seem to consistently under estimate Trump while having much more accuracy in predicting Biden.
+
+recent polls vs old polls
+
+```{r}
+rm(list = ls())
+library(rvest)
+library(ggplot2)
+library(tidyverse)
+library(lubridate)
+library(dplyr)
+library(usmap)
+library(ggeasy)
+```
+
+```{r}
+page1 <- "https://en.wikipedia.org/wiki/Nationwide_opinion_polling_for_the_2020_United_States_presidential_election"
+tableList1 <- page1 %>%
+  read_html() %>%
+  html_nodes(css = "table") %>%
+  html_table(fill = TRUE)
+
+NWPoll = tableList1[[7]]
+
+
+
+page2 <- "https://www.270towin.com/2020-polls-biden-trump/national/"
+tableList2 <- page2 %>%
+  read_html() %>%
+  html_nodes(css = "table") %>%
+  html_table(fill = TRUE)
+
+NTPoll = tableList2[[1]]
+
+```
+
+
+
+```{r}
+
+true_winB <- 0.513 #Proportion of votes won by the candidate in the actual election
+true_winT <- 0.468
+
+names(NTPoll) <- c("one","Source","Date","Sample","Biden","Trump","Other")
+
+
+NTPoll <- NTPoll %>%
+  select(-one)
+
+
+NTPoll <- NTPoll[-c(1, 147, 403), ]
+
+NTPoll <- NTPoll %>%
+  mutate(Sample = str_extract(string = Sample, pattern = "([0-9]+,[0-9]+|[0-9]+)"))
+
+NTPoll <- NTPoll %>% 
+  mutate(Biden = gsub(pattern = "[%]", replacement = "", Biden),
+         Trump = gsub(pattern = "[%]", replacement = "", Trump),
+         Other = gsub(pattern = "[%]", replacement = "", Other),
+         Sample = gsub(pattern = "[,]", replacement = "", Sample))
+
+NTPoll <- NTPoll %>% 
+  mutate(Biden = as.numeric(Biden),
+         Trump = as.numeric(Trump),
+         Other = as.numeric(Other),
+         Sample = as.numeric(Sample))
+
+NTPoll <- NTPoll %>%
+  mutate(XTrump = Trump/100*Sample,
+         XBiden = Biden/100*Sample,
+         XOther = Other/100*Sample)
+
+NTPoll <- NTPoll %>%
+  mutate(WorkCheck = XTrump + XBiden + XOther)
+
+NTPoll <- NTPoll %>%
+  mutate(Biden = Biden/100) %>%
+  mutate(Trump = Trump/100)
+
+obj <- c()
+obj1 <- c()
+objT <- c()
+objT1 <- c()
+TrumpCP <- c()
+BidenCP <- c()
+#BidenP <- c()
+
+for(i in 1:nrow(NTPoll)) {
+obj[i] <- c(prop.test(x = round(NTPoll$XBiden[i]), n = NTPoll$Sample[i], conf.level = 0.95)$conf.int[1])
+obj1[i] <- c(prop.test(x = round(NTPoll$XBiden[i]), n = NTPoll$Sample[i], conf.level = 0.95)$conf.int[2])
+BidenCP[i] <- between(true_winB, obj[i],obj1[i])
+}
+
+for(i in 1:nrow(NTPoll)) {
+objT[i] <- c(prop.test(x = round(NTPoll$XTrump[i]), n = NTPoll$Sample[i], conf.level = 0.95)$conf.int[1])
+objT1[i] <- c(prop.test(x = round(NTPoll$XTrump[i]), n = NTPoll$Sample[i], conf.level = 0.95)$conf.int[2])
+TrumpCP[i] <- between(true_winT, objT[i],objT1[i])
+}
+
+NTPoll <- NTPoll %>%
+  mutate(lowerT = objT) %>%
+  mutate(upperT = objT1) %>%
+  mutate(TrumpCP = TrumpCP) 
+
+NTPoll <- NTPoll %>%
+  mutate(lowerB = obj) %>%
+  mutate(upperB = obj1) %>%
+  mutate(BidenCP = BidenCP)
+
+NTPoll <- NTPoll %>%
+  mutate(TrumpPollDiff = Trump-true_winT) %>%
+  mutate(BidenPollDiff = Biden-true_winB)
+
+NTPoll <- NTPoll %>%
+  mutate(TrumpPollDiffAbs = abs(TrumpPollDiff)) %>%
+  mutate(BidenPollDiffAbs = abs(BidenPollDiff))
+
+NTPoll %>%
+  summarise(mean(TrumpPollDiffAbs)) %>%
+  head()
+
+NTPoll %>%
+  summarise(mean(BidenPollDiffAbs)) %>%
+  head()
+
+
+#NTPoll1 <- NTPoll %>%
+#  as.Date(mdy(Date))
+NTPoll$Date <- as.Date(mdy(NTPoll$Date))
+
+NTPoll %>%
+  summarise(mean(Sample)) %>%
+  head()
+
+"
+proportion_test <- prop.test(x = Biden, n = Sample,p = 0.5, alternative = greater quots hear)
+proportion_test$p.value
+
+for(i in 1:nrow(NTPoll)) {
+test <- prop.test(x = Biden[i], n = Sample,p = 0.5, alternative = greater)
+BidenP <- c(test$p.value)
+}
+
+
+step1 <- NTPoll %>%
+  filter(true_winB > lowerB)
+
+step2 <- step1 %>%
+  filter(true_winB < upperB)
+
+step3 <- step2 %>%
+  filter(BidenCP == TRUE)
+
+view(step1)
+view(step2)
+view(step3)
+
+nrow(step3)
+
+NTPoll %>%
+  filter(BidenCP == TRUE) %>%
+  nrow()
+"
+#view(thing1)
+#view(NTPoll)
+
+```
+
+```{r}
+
+mean(NTPoll$Sample)
+
+#all
+NTPoll %>%
+  filter(TrumpCP == 1) %>%
+  nrow()
+
+NTPoll %>%
+  filter(BidenCP == 1) %>%
+  nrow()
+
+NTPoll %>%
+  filter(BidenCP == 1 & TrumpCP == 1) %>%
+  nrow()
+
+#1000 or less
+NTPoll %>%
+  filter(Sample < 1001) %>%
+  nrow()
+  
+NTPoll %>%
+  filter(Sample < 1001 & TrumpCP == 1) %>%
+  nrow()
+
+NTPoll %>%
+  filter(Sample < 1001 & BidenCP == 1) %>%
+  nrow()
+
+NTPoll %>%
+  filter(Sample < 1001 & BidenCP == 1 & TrumpCP == 1) %>%
+  nrow()
+
+#1000 to 2000
+NTPoll %>%
+  filter(Sample > 1000 & Sample < 2001) %>%
+  nrow()
+  
+NTPoll %>%
+  filter(Sample > 1000 & Sample < 2001 & TrumpCP == 1) %>%
+  nrow()
+
+NTPoll %>%
+  filter(Sample > 1000 & Sample < 2001 & BidenCP == 1) %>%
+  nrow()
+
+NTPoll %>%
+  filter(Sample > 1000 & Sample < 2001 & BidenCP == 1 & TrumpCP == 1) %>%
+  nrow()
+#2000 or greater
+NTPoll %>%
+  filter(Sample > 2000) %>%
+  nrow()
+  
+NTPoll %>%
+  filter(Sample > 2000 & TrumpCP == 1) %>%
+  nrow()
+
+NTPoll %>%
+  filter(Sample > 2000 & BidenCP == 1) %>%
+  nrow()
+
+NTPoll %>%
+  filter(Sample > 2000 & BidenCP == 1 & TrumpCP == 1) %>%
+  nrow()
+```
+
+
+
+
+
+
+
+```{r}
+
+multiplier <- qnorm(p = 0.975)
+
+
+true_winB <- 0.513 #Proportion of votes won by the candidate in the actual election
+true_winT <- 0.468
+
+my.dt <- NTPoll %>%
+  filter(Biden > 55) 
+
+ggplot(NTPoll, aes(x=Source, y=Biden)) +         
+       geom_point(size = 5) +
+       geom_errorbar(aes(ymin = lowerB, ymax = upperB))
+
+
+
+
+#(pollster = c("Pollster A", "Pollster B", "Pollster C"),
+#                    estimate = c(0.866263, 0.28182, 0.37095),
+#                    up = c(0.866263 + multiplier*0.159101, 0.28182 + multiplier*0.372621, 0.37095 + #multiplier*0.707303),
+#                    down = c(0.866263 - multiplier*0.159101, 0.28182 - multiplier*0.372621, 0.37095 - #multiplier*0.707303))
+
+
+#NTPoll <- mdy(NTPoll$Date)
+
+#400, 399, 452, 397, 398
+#111,112,113,114,115
+
+
+
+NTPoll[400, "Source"] <- "Morning Consult 1"
+NTPoll[398, "Source"] <- "Morning Consult 2"
+
+
+OldNTPoll <- NTPoll[c(400, 399, 452, 397, 398),] 
+  view(OldNTPoll)
+NewNTPoll <- NTPoll[c(111,112,113,114,115),] 
+  view(NewNTPoll)
+
+#OldNTPoll[OldNTPoll == 'Morning Consult'] <- 'Morning Consult 1'
+#rownames(OldNTPoll) <- c("Morning Consult 1", "SurveyUSA", "Public Policy", "CNN/SSRS", "Morning Consult 2")
+
+ggplot(OldNTPoll, aes(y = Source, x = Biden*100)) +
+  geom_errorbarh(aes(xmin = lowerB*100, xmax = upperB*100)) +
+  geom_point(size = 5) +
+  geom_vline(xintercept = true_winB*100, color = "darkred", size = 1.5) +
+  xlab("Percentage") +
+  labs(title = "Confidence Intervals of Early Biden Polling") +
+  theme(plot.title = element_text(size = 15),
+        axis.text = element_text(size = 12),
+        #axis.text = element_text(size = 15),
+        axis.title = element_text(size = 10)
+        )
+#axis.text.x, axis.text, axis.title
+ggplot(NewNTPoll, aes(y = Source, x = Biden*100)) +
+  geom_errorbarh(aes(xmin = lowerB*100, xmax = upperB*100)) +
+  geom_point(size = 5) +
+  geom_vline(xintercept = true_winB*100, color = "darkred", size = 1.5) +
+  xlab("Percentage") +
+  labs(title = "Confidence Intervals of Late Biden Polling") +
+  theme(plot.title = element_text(size = 15),
+        axis.text = element_text(size = 12),
+        #axis.text = element_text(size = 15),
+        axis.title = element_text(size = 10)
+        )
+
+#---
+ggplot(OldNTPoll, aes(y = Source, x = Trump*100)) +
+  geom_errorbarh(aes(xmin = lowerT*100, xmax = upperT*100)) +
+  geom_point(size = 5) +
+  geom_vline(xintercept = true_winT*100, color = "darkred", size = 1.5) +
+  xlab("Percentage") +
+  labs(title = "Confidence Intervals of Early Trump Polling") +
+  theme(plot.title = element_text(size = 15),
+        axis.text = element_text(size = 12),
+        #axis.text = element_text(size = 15),
+        axis.title = element_text(size = 10)
+        )
+
+ggplot(NewNTPoll, aes(y = Source, x = Trump*100)) +
+  geom_errorbarh(aes(xmin = lowerT*100, xmax = upperT*100)) +
+  geom_point(size = 5) +
+  geom_vline(xintercept = true_winT*100, color = "darkred", size = 1.5) +
+  xlab("Percentage") +
+  labs(title = "Confidence Intervals of Late Trump Polling") +
+  theme(plot.title = element_text(size = 15),
+        axis.text = element_text(size = 12),
+        #axis.text = element_text(size = 15),
+        axis.title = element_text(size = 10)
+        )
+
+
+#---
+
+ggplot(OldNTPoll, aes(x = Biden, y = factor(Source), color = factor(Source))) +
+  geom_errorbarh(aes(xmin = lowerB, xmax = upperB), colour = "black", position = position_dodge(0.1)) +
+  geom_point(position = position_dodge(0.1), size = 3, shape = 15, fill = "white") +
+  xlab("Pollster") +
+  ylab("Estimate within one month prior") +
+  scale_colour_hue(name="Pollster",    
+                   breaks=c("Pollster A", "Pollster B", "Pollster C"),
+                   labels=c("Pollster A", "Pollster B", "Pollster C"),
+                   l = 40) + 
+  geom_vline(xintercept = true_winB, color = "black", linetype = "dotted", size = 1.5) +
+  theme_classic() +
+  theme(aspect.ratio=2/3)
+
+```
+
+
+--------------------------------------------------------------------
+It is wikipedia. But it was the only source I could find that gave a state by state table showing official votes, and because there is almost no grey area in which states voted which way I think this should work. This will be what I compare the polls to.
+```{r}
+#https://www.fec.gov/resources/cms-content/documents/2020presgeresults.pdf
+# This is gov sit to confirm wiki
+
+page <- "https://en.wikipedia.org/wiki/2020_United_States_presidential_election"
+tableList <- page %>%
+  read_html() %>%
+  html_nodes(css = "table") %>%
+  html_table(fill = TRUE)
+
+officialVotes = tableList[[30]] # should save this so table index stops changing
+view(officialVotes)
+
+# Per = Percent, EV = Electoral Votes
+names(officialVotes) <- c("State", "BidenTotal", "BidenPer", "BidenEV", "TrumpTotal", "TrumpPer", "TrumpEV", "JorgensenTotal", "JorgensenPer", "JorgensenEV", "HawkinsTotal", "HawkinsPer", "HawkinsEV", "OtherTotal", "OtherPer", "OtherEV", "MarginTotal", "MarginPer", "MarginSwingPer", "TotalVotes")
+
+#view(officialVotes)
+
+officialVotes <- officialVotes[-c(59, 58, 34, 33, 32, 23, 22, 1), ]
+
+
+officialVotesTest <- officialVotes
+#view(officialVotesTest)
+
+officialVotes[officialVotes == 'District of Columbia'] <- 'D.C.'
+officialVotes[officialVotes == 'Maine †'] <- 'Maine'
+officialVotes[officialVotes == 'Nebraska †'] <- 'Nebraska'
+officialVotes[officialVotes == 'Nevada[v]'] <- 'Nevada'
+officialVotes[officialVotes == 'New Jersey[w]'] <- 'New Jersey'
+officialVotes[officialVotes == 'Texas[x]'] <- 'Texas'
+
+names(officialVotes)
+
+officialVotes <- officialVotes %>% 
+  mutate(BidenPer = gsub(pattern = "[%]", replacement = "", BidenPer),
+         TrumpPer = gsub(pattern = "[%]", replacement = "", TrumpPer),
+         JorgensenPer = gsub(pattern = "[%]", replacement = "", JorgensenPer),
+         HawkinsPer = gsub(pattern = "[%]", replacement = "", HawkinsPer),
+         OtherPer = gsub(pattern = "[%]", replacement = "", OtherPer),
+         MarginPer = gsub(pattern = "[%]", replacement = "", MarginPer),
+         MarginSwingPer = gsub(pattern = "[%]", replacement = "", MarginSwingPer))
+
+officialVotes <- officialVotes %>% 
+  mutate(BidenTotal = gsub(pattern = "[,]", replacement = "", BidenTotal),
+         TrumpTotal = gsub(pattern = "[,]", replacement = "", TrumpTotal),
+         JorgensenTotal = gsub(pattern = "[,]", replacement = "", JorgensenTotal),
+         HawkinsTotal = gsub(pattern = "[,]", replacement = "", HawkinsTotal),
+         OtherTotal = gsub(pattern = "[,]", replacement = "", OtherTotal),
+         MarginTotal = gsub(pattern = "[,]", replacement = "", MarginTotal),
+         TotalVotes = gsub(pattern = "[,]", replacement = "", TotalVotes))
+
+officialVotes <- officialVotes %>% 
+  mutate(BidenEV = gsub(pattern = "[–      ]", replacement = "0", BidenEV),
+         TrumpEV = gsub(pattern = "[–      ]", replacement = "0", TrumpEV),
+         JorgensenEV = gsub(pattern = "[–      ]", replacement = "0", JorgensenEV),
+         HawkinsEV = gsub(pattern = "[–      ]", replacement = "0", HawkinsEV),
+         HawkinsTotal = gsub(pattern = "[–      ]", replacement = "0", HawkinsTotal),
+         HawkinsPer = gsub(pattern = "[–      ]", replacement = "0", HawkinsPer),
+         OtherEV = gsub(pattern = "[–      ]", replacement = "0", OtherEV),
+         OtherTotal = gsub(pattern = "[–      ]", replacement = "0", OtherTotal),
+         OtherPer = gsub(pattern = "[–      ]", replacement = "0", OtherPer))
+
+officialVotes <- officialVotes %>%
+  mutate(MarginTotal = str_extract(string = MarginTotal, pattern = "([0-9]+)"))
+  
+officialVotes <- officialVotes %>%
+  mutate(MarginTotal = as.numeric(MarginTotal))
+
+officialVotes <- officialVotes %>%
+  mutate(MarginTotal = if_else(TrumpPer>BidenPer, (-1*MarginTotal), (MarginTotal)))
+
+#---
+officialVotes <- officialVotes %>%
+  mutate(MarginPer = str_extract(string = MarginPer, pattern = "([0-9]+.[0-9]+)"))
+  
+officialVotes <- officialVotes %>%
+  mutate(MarginPer = as.numeric(MarginPer))
+
+officialVotes <- officialVotes %>%
+  mutate(MarginPer = if_else(TrumpPer>BidenPer, (-1*MarginPer), (MarginPer)))
+
+#---
+officialVotes <- officialVotes %>%
+  mutate(MarginSwingPer = str_extract(string = MarginSwingPer, pattern = "([0-9]+.[0-9]+)"))
+  
+officialVotes <- officialVotes %>%
+  mutate(MarginSwingPer = as.numeric(MarginSwingPer))
+
+officialVotes <- officialVotes %>%
+  mutate(MarginSwingPer = if_else(TrumpPer>BidenPer, (-1*MarginSwingPer), (MarginSwingPer)))
+
+
+officialVotes <- officialVotes %>%
+  mutate(BidenTotal = as.numeric(BidenTotal),
+         TrumpTotal = as.numeric(TrumpTotal),
+         BidenPer = as.numeric(BidenPer),
+         TrumpPer = as.numeric(TrumpPer),
+         BidenEV = as.numeric(BidenEV),
+         TrumpEV = as.numeric(TrumpEV),
+         JorgensenTotal = as.numeric(JorgensenTotal),
+         JorgensenPer = as.numeric(JorgensenPer),
+         JorgensenEV = as.numeric(JorgensenEV),
+         HawkinsTotal = as.numeric(HawkinsTotal),
+         HawkinsPer = as.numeric(HawkinsPer),
+         HawkinsEV = as.numeric(HawkinsEV),
+         OtherTotal = as.numeric(OtherTotal),
+         OtherPer = as.numeric(OtherPer),
+         OtherEV = as.numeric(OtherEV),
+         MarginTotal = as.numeric(MarginTotal),
+         MarginPer = as.numeric(MarginPer),
+         MarginSwingPer = as.numeric(MarginSwingPer),
+         TotalVotes = as.numeric(TotalVotes))
+
+head(officialVotes)
+```
+
+This site has been around since before 2004. It looks at state by state polling to make it's own predictions and shows opinion, not just stats. But since I am only using the stats that they have collected from other polls that bias should not be a problem.
+```{r}
+#https://www.electoral-vote.com/evp2020/Info/data.html
+pollData <- read_csv("pres_polls.csv")
+
+head(pollData)
+
+pollData <- pollData %>% 
+  select(-...9,-...10,-...11,-...12,-...13,-...14,-...15)
+
+pollDataworking <- pollData
+
+# This gives me the average polling per state, which is ideal information to have when making maps.
+pollDataSum <- pollData %>%
+  group_by(State) %>%
+  summarise(DemPoll = mean(Dem), GOPPoll = mean(GOP)) 
+
+# Same thing limited to 2 months before the election.
+pollDataSum2M <- pollData %>%
+  filter(Day > 250) %>%
+  group_by(State) %>%
+  summarise(DemPoll2M = mean(Dem), GOPPoll2M = mean(GOP)) 
+
+#add the differance between the two in a new row
+pollDataSum2M <- pollDataSum2M %>%
+  mutate(MarginPerPoll2M = DemPoll2M - GOPPoll2M)
+
+head(pollDataSum2M)
+head(pollDataSum)
+```
+
+```{r}
+#for poll data changes
+head(pollDataworking)
+
+pollDataworking <- pollDataworking %>%
+  mutate(Date = gsub(pattern = " [1234567890]+", replacement = "", Date)) %>%
+  mutate(Date = as.character(Date))
+
+pollDataworking1 <- pollDataworking %>%
+  filter(Date == "Nov" | Date == "Sep")
+ 
+
+pollsPerState <- table(pollDataworking1$State)
+
+
+
+
+
+pollsPerState1 <- tibble(pollsPerState)
+
+view(pollsPerState)
+#----
+pollDataworking <- pollDataworking %>%
+  filter(Day > 250) %>%
+  select(-Ind,-Date)
+
+pollDataworking <- pollDataworking %>%
+full_join(officialVotes, by = c("State" = "State"))
+
+pollDataworking <- pollDataworking %>%
+  select(-BidenTotal,-TrumpTotal,-JorgensenTotal,-JorgensenPer,-JorgensenEV,-HawkinsEV,-HawkinsPer,-HawkinsTotal,OtherPer,-OtherEV,-OtherTotal,-OtherPer)
+
+pollDataworking <- pollDataworking %>%
+  mutate(PollAccGOP = GOP - TrumpPer,
+         PollAccDem = Dem - BidenPer)
+
+pollDataworking %>%
+  filter(PollAccGOP < 1, PollAccGOP > -1,PollAccDem < 1, PollAccDem > -1) %>%
+  view()
+
+
+
+view(pollDataworking)
+
+```
+
+
+```{r}
+#https://en.wikipedia.org/wiki/Nationwide_opinion_polling_for_the_2020_United_States_presidential_election
+
+#https://www.270towin.com/2020-polls-biden-trump/national/
+
+
+```
+
+
+
+
+```{r}
+Combined <- officialVotes %>%
+left_join(pollDataSum, by = c("State" = "State"))
+
+Combined <- Combined %>%
+left_join(pollDataSum2M, by = c("State" = "State"))
+
+head(Combined)
+
+Combined <- Combined %>%
+  mutate(BidenPollDiffN = BidenPer-DemPoll2M) %>%
+  mutate(TrumpPollDiffN = TrumpPer-GOPPoll2M)
+
+Combined <- Combined %>%
+  mutate(BidenPollDiff = abs(BidenPer-DemPoll)) %>%
+  mutate(TrumpPollDiff = abs(TrumpPer-GOPPoll))
+
+Combined %>%
+  summarise(mean(BidenPollDiff)) %>%
+  head()
+
+Combined %>%
+  summarise(mean(TrumpPollDiff)) %>%
+  head()
+
+  
+Combined <- Combined %>%
+  mutate(BidenPollDiff2M = abs(BidenPer-DemPoll2M)) %>%
+  mutate(TrumpPollDiff2M = abs(TrumpPer-GOPPoll2M))
+
+Combined %>%
+  summarise(mean(BidenPollDiff2M)) %>%
+  head()
+
+Combined %>%
+  summarise(mean(TrumpPollDiff2M)) %>%
+  head()
+```
+
+```{r}
+#This is the problem chunck
+
+PH1 <- Combined %>%
+  filter(BidenPer > TrumpPer) %>%
+  mutate(Winner = TrumpEV) %>%
+  mutate(Winner = gsub(pattern = "0", replacement = "Biden", Winner))
+  
+PH2 <- Combined %>%
+  filter(BidenPer < TrumpPer) %>%
+  mutate(Winner = BidenEV) %>%
+  mutate(Winner = gsub(pattern = "0", replacement = "Trump", Winner))
+          
+Combined1 <- Combined %>%
+left_join(PH1, by = c("State" = "State")) 
+
+Combined2 <- Combined1 %>%
+left_join(PH2, by = c("State" = "State")) 
+
+
+
+
+# this is missing imput - mutate(MarginPerPoll2M = DemPoll2M - GOPPoll2M)
+
+  
+  
+head(Combined1)
+head(PH1)
+```
+
+
+
+
+```{r}
+Combined <- Combined %>%
+  mutate(state = State)
+
+
+# This is a map of the votes Biden got.
+HowBidenDid <- plot_usmap(data = Combined, values = "BidenPer", labels=FALSE)+
+  scale_fill_continuous(low = "orange", high = "blue",
+                        limits = c(-70,70))+
+  easy_move_legend(to = c("right")) +
+  labs(title = "How Biden Did") +
+  theme(panel.background = element_rect(colour = "black"))
+
+# This is the prediction of how we thought Biden would do within two months of the election.
+HowBidenSouldHeveDone <- plot_usmap(data = Combined, values = "DemPoll", labels=FALSE)+
+  scale_fill_continuous(low = "orange", high = "blue",
+                        limits = c(-70,70))+
+  easy_move_legend(to = c("right")) +
+  labs(title = "How Biden Should Have Done") +
+  theme(panel.background = element_rect(colour = "black"))
+
+# This shows Biden and Trump in the polls two months befor the election.
+TheRace2MonthsOut <- plot_usmap(data = Combined, values = "MarginPerPoll2M", labels=FALSE)+
+  scale_fill_continuous(low = "orange", high = "blue",
+                        )+
+  easy_move_legend(to = c("right")) +
+  labs(title = "The Race 2 Months Out") +
+  theme(panel.background = element_rect(colour = "black"))
+
+# How biden and Trump did.
+TheRace <- plot_usmap(data = Combined, values = "MarginPer", labels=FALSE)+
+  scale_fill_continuous(low = "orange", high = "blue",
+                        )+
+  easy_move_legend(to = c("right")) +
+  labs(title = "The Race") +
+  theme(panel.background = element_rect(colour = "black"))
+
+HowBidenDid
+HowBidenSouldHeveDone
+TheRace2MonthsOut
+TheRace
+
+BidenVPolls <- plot_usmap(data = Combined, values = "BidenPollDiffN", labels=FALSE)+
+  scale_fill_continuous(low = "yellow", high = "blue",
+                        limits = c(-10,10))+
+  easy_move_legend(to = c("right")) +
+  labs(title = "Biden: Polling Verses Election") +
+  labs(fill = "Percentage")+
+  theme(panel.background = element_rect(colour = "black")) +
+  theme(plot.title = element_text(size = 15)) +
+  theme(legend.title = element_text(size = 10)) + 
+  theme(legend.text = element_text(size = 10)) 
+        
+
+#legend.title, legend.text--------------------------------
+TrumpVPolls <- plot_usmap(data = Combined, values = "TrumpPollDiffN", labels=FALSE)+
+  scale_fill_continuous(low = "yellow", high = "blue",
+                        limits = c(-10,10))+
+  easy_move_legend(to = c("right")) +
+  labs(title = "Trump: Polling Verses Election") +
+  labs(fill = "Percentage")+
+  theme(panel.background = element_rect(colour = "black"),
+        legend.position = "none",
+        plot.title = element_text(size = 15))
+
+```
+
+
+
+
+
+
+```{r}
+CombinedWithError <- Combined %>%
+  mutate(TrumpPolling = TrumpPer - GOPPoll2M,
+         BidenPolling = BidenPer - DemPoll2M)
+
+head(CombinedWithError)
+
+MarginError <- plot_usmap(data = CombinedWithError, values = "TrumpPolling", labels=FALSE)+
+  scale_fill_continuous(low = "orange", high = "blue",
+                        )+
+  easy_move_legend(to = c("right")) +
+  labs(title = "Trump's Polling Accuracy") +
+  theme(panel.background = element_rect(colour = "black"))
+
+MarginError
+
+ggplot(CombinedWithError)+
+  aes(y = TrumpPolling,x = MarginPer, color = state)+
+  geom_point()
+
+# This shows the accuracy of the polls by state, the closer to 0 the more accurate the polls are. The x-axis shows the accuracy of the polls for Biden, and the Y-axis shows the accuracy of polls for Trump. If a state is positive on one of the axis then the polls under estimated that candidate.
+ggplot(CombinedWithError)+
+  aes(y = TrumpPolling,x = BidenPolling, color = State)+
+  geom_point()+
+  geom_vline(xintercept = 0)+
+  geom_hline(yintercept = 0)+
+  xlim(-7,7)+
+  ylim(-10,10)+
+  xlab("Bidens Polling Accuracy")+
+  ylab("Trumps Polling Accuracy")+
+  easy_remove_legend(teach = FALSE)
+  #theme(panel.background = element_rect(colour = "black"))
+
+
+```
